@@ -33,8 +33,21 @@ def create_interface():
     control_frame = tk.Frame(root)
     control_frame.pack(padx=10, pady=5, fill=tk.X)
     
+    # Model selection dropdown
+    model_var = tk.StringVar()
+    model_selector = ttk.Combobox(control_frame, textvariable=model_var, state='readonly')
+    model_selector.pack(side=tk.LEFT, padx=(0, 10))
+    
+    # Stop generation button
+    stop_button = tk.Button(control_frame, text="Stop", command=lambda: app_state.update(stop_flag=True))
+    stop_button.pack(side=tk.LEFT)
+    
     clear_button = tk.Button(control_frame, text="New Session", command=clear_session)
     clear_button.pack(side=tk.RIGHT, padx=(10, 0))
+
+    # Add model refresh button
+    refresh_btn = tk.Button(control_frame, text="Refresh", command=lambda: threading.Thread(target=refresh_models, args=(app_state,)).start())
+    refresh_btn.pack(side=tk.LEFT, padx=(10, 0))
 
     # User input section
     input_frame = tk.Frame(root)
@@ -65,7 +78,9 @@ def create_interface():
         'progress': progress,
         'current_context': "",
         'response_buffer': '',
-        'last_update': 0
+        'last_update': 0,
+        'model_selector': model_selector,
+        'stop_flag': False,
     }
 
 def attach_pdf():
@@ -171,19 +186,27 @@ def handle_response(state):
             False
         ))
         
-        # Create streaming response
+        # Get selected model or default
+        selected_model = state['model_selector'].get() or 'deepseek-r1:14b'
+        
+        # Reset stop flag
+        state['stop_flag'] = False
+        
+        # Modified response streaming
         response = ollama.generate(
-            model='deepseek-r1:14b',
+            model=selected_model,
             prompt=full_prompt,
             options={'num_ctx': 4096},
             stream=True
         )
         
-        # Process stream chunks
         state['response_buffer'] = ''
         state['last_update'] = time.time()
         
         for chunk in response:
+            if state['stop_flag']:
+                update_chat(state['chat_history'], "\n[Generation Stopped]\n", False)
+                break
             if 'response' in chunk:
                 state['response_buffer'] += chunk['response']
                 
@@ -205,8 +228,97 @@ def send_message():
     state = app_state
     threading.Thread(target=handle_response, args=(state,)).start()
 
+# Updated model refresh function
+def refresh_models(state):
+    try:
+        # Get raw model list from Ollama
+        response = ollama.list()
+        models = response.get('models', [])
+        model_names = []
+        
+        # Handle both object and dictionary formats
+        for model in models:
+            if hasattr(model, 'model'):  # If it's a Model object
+                model_names.append(model.model)
+            elif isinstance(model, dict) and 'model' in model:  # If it's a dictionary
+                model_names.append(model['model'])
+        
+        def update_ui():
+            state['model_selector'].set('')
+            state['model_selector']['values'] = model_names
+            if model_names:
+                state['model_selector'].set(model_names[0])
+            else:
+                state['status_label'].config(text="No models found")
+        
+        # Update UI on main thread
+        state['root'].after(0, update_ui)
+        
+    except Exception as e:
+        print(f"Model refresh error: {str(e)}")
+        def show_error(error_msg):
+            state['status_label'].config(text=f"Model Error: {error_msg}")
+        state['root'].after(0, lambda: show_error(str(e)))
+
+def create_loading_window():
+    loading = tk.Toplevel()
+    loading.title("Loading")
+    loading.geometry("300x150")
+    loading.transient()  # Make window float on top
+    loading.grab_set()   # Make window modal
+    
+    # Center the loading window
+    loading.update_idletasks()
+    width = loading.winfo_width()
+    height = loading.winfo_height()
+    x = (loading.winfo_screenwidth() // 2) - (width // 2)
+    y = (loading.winfo_screenheight() // 2) - (height // 2)
+    loading.geometry(f'{width}x{height}+{x}+{y}')
+    
+    label = tk.Label(loading, text="Welcome to Ollama Chat Interface\nInitializing...", pady=20)
+    label.pack()
+    
+    progress = ttk.Progressbar(loading, mode='indeterminate')
+    progress.pack(padx=20, fill=tk.X)
+    progress.start()
+    
+    return loading
+
+def initialize_app():
+    loading_window = create_loading_window()
+    
+    try:
+        # Get initial model list
+        response = ollama.list()
+        models = response.get('models', [])
+        model_names = []
+        
+        # Handle both object and dictionary formats
+        for model in models:
+            if hasattr(model, 'model'):  # If it's a Model object
+                model_names.append(model.model)
+            elif isinstance(model, dict) and 'model' in model:  # If it's a dictionary
+                model_names.append(model['model'])
+        
+        # Update model selector and destroy loading window
+        app_state['model_selector']['values'] = model_names
+        if model_names:
+            app_state['model_selector'].set(model_names[0])
+        else:
+            app_state['status_label'].config(text="No models found")
+        
+    except Exception as e:
+        print(f"Initialization error: {str(e)}")
+        app_state['status_label'].config(text=f"Failed to load models: {str(e)}")
+    finally:
+        loading_window.destroy()
+
 # Application setup
 app_state = create_interface()
 app_state['chat_history'].tag_config('user', foreground='blue')
 app_state['chat_history'].tag_config('bot', foreground='green')
+
+# Initialize app with loading screen in background thread
+threading.Thread(target=initialize_app).start()
+
 app_state['root'].mainloop()
