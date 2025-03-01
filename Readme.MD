@@ -1,79 +1,75 @@
-# Ollama GUI
+# OpenRouterGUI
 
-A graphical user interface for interacting with Ollama models, featuring PDF context support and real-time response streaming.
-
-## Prerequisites
-
-- Python 3.8 or higher
-- Ollama installed and running on your system
-  - [Install Ollama](https://ollama.ai/download)
-
-## Installation
-
-1. Install required Python packages:
-bash
-pip install tkinter ollama PyPDF2 pyinstaller
-
-2. Clone or download this repository:
-bash
-git clone <https://github.com/Wegatriespython/Ollama_Gui>
-cd ollama-gui
-3. Run directly with Python:
-bash
-python ollama_gui.py
-
-Or build as standalone application:
-bash
-python -m PyInstaller ollama_gui.spec
-The executable will be created in `dist/Ollama GUI/`.
+OpenRouterGUI is a graphical user interface application built with Python's Tkinter library. It interfaces with the OpenAI API to provide a conversational chat interface with additional functionalities such as file attachments, session cost tracking, and chat archiving.
 
 ## Features
 
-- Real-time chat interface with Ollama models
-- PDF document context support
-- Model selection dropdown
-- Response streaming with stop capability
-- Session management
-- Progress indicators for long operations
+- **Chat Interface**: Communicate with the OpenAI models through a user-friendly chat interface.
+- **Model Selection**: Choose from a list of available models to interact with.
+- **System Prompts**: Customize the system prompt to guide the behavior of the assistant.
+- **File Attachments**: Attach images and PDFs to your chat sessions.
+- **Token and Cost Tracking**: Keep track of input and output tokens and the associated costs.
+- **Session Management**: Start new sessions, archive chats, and view archived chat history.
+- **Markdown Rendering**: Display chat messages with markdown rendering for better readability.
+
+## Installation
+
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/Wegatriespython/Ollama_Gui.git
+   cd Ollama_Gui
+   ```
+
+2. **Install the required dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. **Run the application**:
+   ```bash
+   python OpenRouterGUI.py
+   ```
 
 ## Usage
 
-1. Launch the application
-2. Select your preferred Ollama model from the dropdown
-   - Use "Refresh" button to update available models
-3. (Optional) Attach PDF documents for context
-   - Click "Attach PDF" to select documents
-   - Use "Remove" to remove selected documents
-4. Type your message and press Enter or click "Send"
-5. Use "Stop" to halt generation
-6. "New Session" clears the current chat and removes attached PDFs
+1. **Launch the Application**: Run the `OpenRouterGUI.py` script to launch the GUI.
+2. **Select a Model**: Choose a model from the dropdown list in the left panel.
+3. **Set System Prompt**: Customize the system prompt if needed.
+4. **Attach Files**: Use the buttons in the attachments section to attach images or PDFs.
+5. **Send Messages**: Type your message in the input area and click "Send" or press `Ctrl+Enter`.
+6. **View and Archive Chats**: Archive the current chat session or view previously archived chats.
 
-## Troubleshooting
+## Dependencies
 
-- Ensure Ollama is running before launching the GUI
-- Check that required models are downloaded in Ollama
-- For PDF issues, ensure files are not corrupted or password-protected
+- `tkinter`: Python's standard GUI toolkit.
+- `openai`: OpenAI API client.
+- `Pillow`: Python Imaging Library for image processing.
+- `PyPDF2`: Library for reading PDF files.
+- `tkhtmlview`: HTML viewer for Tkinter.
+- `tiktoken`: Tokenizer for OpenAI models.
+
+## Files
+
+- `OpenRouterGUI.py`: Main application script.
+- `Open_router_basics.py`: Contains basic configurations and client initialization for the OpenAI API.
+
+## Contributing
+
+Contributions are welcome! Please fork the repository and create a pull request with your changes.
 
 ## License
 
-MIT License
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
-Copyright (c) 2024
+## Acknowledgements
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+- Thanks to OpenAI for providing the API and models used in this application.
+- Special thanks to the developers of the libraries used in this project.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+## Contact
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+For any questions or issues, please open an issue on the [GitHub repository](https://github.com/Wegatriespython/Ollama_Gui).
+
+---
+
+This README provides an overview of the OpenRouterGUI application, including its features, installation instructions, usage guidelines, dependencies, and contribution information.
