@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import scrolledtext, filedialog, ttk, font
+from tkinter import scrolledtext, filedialog, ttk, font, messagebox
 import threading
 import openai
 import io
@@ -13,6 +13,8 @@ import markdown
 import tkhtmlview
 import tiktoken
 import mimetypes   # <-- Added for MIME type guessing
+import json
+from datetime import datetime
 
 import Open_router_basics
 
@@ -34,7 +36,7 @@ class OpenRouterGUI:
 
         self.root = root
         self.root.title("OpenRouter Chat Interface")
-        self.root.geometry("1200x800")
+        self.root.geometry("1920x1080")
         
         # Set up the main frame with a nice background
         self.main_frame = tk.Frame(root, bg="#f5f5f5")
@@ -172,6 +174,13 @@ class OpenRouterGUI:
         self.clear_button = tk.Button(control_frame, text="New Session", command=self.clear_session)
         self.clear_button.pack(fill=tk.X)
         
+        # New buttons for archiving and viewing chat history
+        self.archive_button = tk.Button(control_frame, text="Archive Chat", command=self.archive_chat)
+        self.archive_button.pack(fill=tk.X, pady=(5, 0))
+        
+        self.view_history_button = tk.Button(control_frame, text="View History", command=self.view_history)
+        self.view_history_button.pack(fill=tk.X, pady=(5, 0))
+        
         # Status indicator
         self.status_label = tk.Label(self.left_panel, text="Ready", bg="#e0e0e0", anchor=tk.W)
         self.status_label.pack(fill=tk.X, padx=10, pady=(0, 10))
@@ -299,35 +308,43 @@ class OpenRouterGUI:
         self.status_label.config(text=text)
         self.root.update_idletasks()
     
-    def update_chat_display(self):
+    def get_rendered_chat_html(self):
+        # Generate HTML content based on conversation history
         html_content = "<html><body style='font-family: Helvetica, Arial, sans-serif;'>"
-        
         for msg in self.conversation_history:
             if msg["role"] == "user":
-                html_content += f"<div style='margin: 10px 0; padding: 10px; background-color: #e6f2ff; border-radius: 10px;'>"
-                html_content += f"<strong>You:</strong><br/>"
-                # Use the display version if available.
+                html_content += (
+                    "<div style='margin: 10px 0; padding: 10px; "
+                    "background-color: #e6f2ff; border-radius: 10px;'>"
+                )
+                html_content += "<strong>You:</strong><br/>"
                 content_to_display = msg.get("display", msg.get("content", ""))
                 text_with_br = content_to_display.replace('\n', '<br/>')
                 html_content += text_with_br
                 html_content += "</div>"
-            
             elif msg["role"] == "assistant":
-                html_content += f"<div style='margin: 10px 0; padding: 10px; background-color: #f0f0f0; border-radius: 10px;'>"
-                html_content += f"<strong>Assistant:</strong><br/>"
+                html_content += (
+                    "<div style='margin: 10px 0; padding: 10px; "
+                    "background-color: #f0f0f0; border-radius: 10px;'>"
+                )
+                html_content += "<strong>Assistant:</strong><br/>"
                 md_content = msg["content"]
                 html_from_md = markdown.markdown(md_content, extensions=['fenced_code', 'tables'])
                 html_content += html_from_md
                 html_content += "</div>"
-            
             elif msg["role"] == "system":
-                html_content += f"<div style='margin: 10px 0; padding: 10px; color: #666; font-style: italic;'>"
-                # Fix the backslash issue by using a temporary variable
+                html_content += (
+                    "<div style='margin: 10px 0; padding: 10px; "
+                    "color: #666; font-style: italic;'>"
+                )
                 content_with_br = msg['content'].replace('\n', '<br/>')
                 html_content += f"System: {content_with_br}"
                 html_content += "</div>"
-        
         html_content += "</body></html>"
+        return html_content
+
+    def update_chat_display(self):
+        html_content = self.get_rendered_chat_html()
         self.chat_display.set_html(html_content)
     
     def send_message_event(self, event):
@@ -499,6 +516,128 @@ class OpenRouterGUI:
     def clear_attachments(self):
         self.attached_files = []
         self.file_listbox.delete(0, tk.END)
+
+    def get_conversation_markdown(self):
+        """Generate a markdown summary from the conversation history."""
+        md_text = ""
+        for msg in self.conversation_history:
+            if msg["role"] == "user":
+                text = msg.get("display", msg.get("content", ""))
+                md_text += f"**You:** {text}\n\n"
+            elif msg["role"] == "assistant":
+                md_text += f"**Assistant:** {msg.get('content', '')}\n\n"
+            elif msg["role"] == "system":
+                md_text += f"**System:** {msg.get('content', '')}\n\n"
+        return md_text
+
+    def archive_chat(self):
+        # Archive the current chat state if there is conversation history.
+        if not self.conversation_history:
+            self.update_status("No chat to archive")
+            return
+        try:
+            # Generate markdown context from the conversation history
+            conversation_md = self.get_conversation_markdown()
+            # Ping the naming model with markdown context for a short descriptive name
+            response = client.chat.completions.create(
+                model="google/gemini-2.0-flash-001",
+                messages=[
+                    {"role": "system", "content": "Describe the conversation in maximum 5 words. Use the markdown below as context:"},
+                    {"role": "user", "content": conversation_md}
+                ],
+            )
+            chat_name = response.choices[0].message.content.strip()
+            chat_name = " ".join(chat_name.split()[:5])  # Only take the first 5 words
+        except Exception as e:
+            chat_name = "Archived Chat"
+            self.update_status(f"Archiving name error: {str(e)}")
+        
+        current_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        rendered_content = self.get_rendered_chat_html()
+        attachments = self.attached_files.copy()  # capture current attachments list
+        
+        archive_entry = {
+            "name": chat_name,
+            "date": current_date,
+            "conversation_history": self.conversation_history,
+            "rendered_content": rendered_content,
+            "attachments": attachments,
+        }
+        
+        archive_file = "chat_archives.json"
+        archives = []
+        if os.path.exists(archive_file):
+            try:
+                with open(archive_file, "r", encoding="utf-8") as f:
+                    archives = json.load(f)
+            except:
+                archives = []
+        archives.append(archive_entry)
+        with open(archive_file, "w", encoding="utf-8") as f:
+            json.dump(archives, f, indent=4)
+        self.update_status(f"Chat archived as: {chat_name}")
+
+    def view_history(self):
+        archive_file = "chat_archives.json"
+        if not os.path.exists(archive_file):
+            self.update_status("No archived chats found.")
+            return
+        try:
+            with open(archive_file, "r", encoding="utf-8") as f:
+                archives = json.load(f)
+        except Exception as e:
+            self.update_status(f"Error loading archives: {str(e)}")
+            return
+        
+        history_win = tk.Toplevel(self.root)
+        history_win.title("Archived Chats")
+        history_win.geometry("400x300")
+        # Reminder for deletion action
+        info_label = tk.Label(history_win, text="(Hint: Ctrl+Left-click on an entry to delete it)", fg="red")
+        info_label.pack(pady=(5, 0))
+        
+        listbox = tk.Listbox(history_win)
+        listbox.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        for idx, entry in enumerate(archives):
+            listbox.insert(tk.END, f"{entry['date']} - {entry['name']}")
+        
+        def on_view():
+            # Archive the current chat if there's content
+            if self.conversation_history:
+                self.archive_chat()
+            selection = listbox.curselection()
+            if not selection:
+                return
+            index = selection[0]
+            selected_archive = archives[index]
+
+            # Load the selected archive as the current chat
+            self.conversation_history = selected_archive.get("conversation_history", [])
+            self.attached_files = selected_archive.get("attachments", [])
+            self.update_chat_display()
+            self.update_status(f"Loaded archived chat: {selected_archive.get('name')}")
+        
+        view_btn = tk.Button(history_win, text="View Chat", command=on_view)
+        view_btn.pack(pady=5)
+
+        def on_ctrl_click(event):
+            # Determine which archive entry was clicked
+            index = listbox.nearest(event.y)
+            if index < 0 or index >= len(archives):
+                return
+            # Confirm deletion using a message box
+            if messagebox.askyesno("Delete Chat", "Are you sure you want to delete this archived chat?"):
+                archives.pop(index)
+                with open(archive_file, "w", encoding="utf-8") as f:
+                    json.dump(archives, f, indent=4)
+                # Refresh the listbox with updated archives
+                listbox.delete(0, tk.END)
+                for idx, entry in enumerate(archives):
+                    listbox.insert(tk.END, f"{entry['date']} - {entry['name']}")
+                self.update_status("Deleted archived chat.")
+
+        listbox.bind("<Control-Button-1>", on_ctrl_click)
 
 def main():
     root = tk.Tk()
