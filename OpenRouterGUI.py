@@ -11,6 +11,8 @@ from PyPDF2 import PdfReader
 import textwrap
 import markdown
 import tkhtmlview
+import tiktoken
+import mimetypes   # <-- Added for MIME type guessing
 
 import Open_router_basics
 
@@ -18,18 +20,18 @@ import Open_router_basics
 client = Open_router_basics.client
 
 # Available models
-MODEL_LIST = [
-    "openai/o3-mini-high",
-    "anthropic/claude-3-7-sonnet",
-    "anthropic/claude-3.7-sonnet:thinking",
-    "openai/gpt-4.5-preview",
-    "google/gemini-2.0-flash-001",
-    "anthropic/claude-3.5-sonnet",
-    "perplexity/r1-1776"
-]
+MODEL_LIST = Open_router_basics.Model_list
+
+# Model pricing information ($/million tokens)
+MODEL_PRICING = Open_router_basics.Model_cost
 
 class OpenRouterGUI:
     def __init__(self, root):
+        # Initialize token counters and session cost tracking before any UI setup calls
+        self.total_input_tokens = 0  # Initialize input tokens to 0
+        self.total_output_tokens = 0  # Initialize output tokens to 0
+        self.total_cost = 0.0         # Initialize session cost to 0.0
+
         self.root = root
         self.root.title("OpenRouter Chat Interface")
         self.root.geometry("1200x800")
@@ -88,6 +90,7 @@ class OpenRouterGUI:
         self.model_var = tk.StringVar(value=MODEL_LIST[0])
         model_dropdown = ttk.Combobox(model_frame, textvariable=self.model_var, values=MODEL_LIST, state="readonly", width=25)
         model_dropdown.pack(fill=tk.X)
+        model_dropdown.bind("<<ComboboxSelected>>", self.update_cost_display)
         
         # System prompt section
         system_frame = tk.LabelFrame(self.left_panel, text="System Prompt", bg="#e0e0e0", padx=10, pady=10)
@@ -99,7 +102,7 @@ class OpenRouterGUI:
         
         # File attachments section
         attachments_frame = tk.LabelFrame(self.left_panel, text="Attachments", bg="#e0e0e0", padx=10, pady=10)
-        attachments_frame.pack(fill=tk.BOTH, padx=10, pady=10, expand=True)
+        attachments_frame.pack(fill=tk.X, padx=10, pady=10)
         
         button_frame = tk.Frame(attachments_frame, bg="#e0e0e0")
         button_frame.pack(fill=tk.X, pady=(0, 5))
@@ -113,8 +116,54 @@ class OpenRouterGUI:
         self.remove_file_btn = tk.Button(button_frame, text="Remove", command=self.remove_file)
         self.remove_file_btn.pack(side=tk.RIGHT)
         
-        self.file_listbox = tk.Listbox(attachments_frame, selectmode=tk.SINGLE, height=10)
-        self.file_listbox.pack(fill=tk.BOTH, expand=True)
+        self.file_listbox = tk.Listbox(attachments_frame, selectmode=tk.SINGLE, height=5)
+        self.file_listbox.pack(fill=tk.X)
+        
+        # Cost tracking section
+        cost_frame = tk.LabelFrame(self.left_panel, text="Session Cost Tracker", bg="#e0e0e0", padx=10, pady=10)
+        cost_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        # Model pricing info
+        pricing_frame = tk.Frame(cost_frame, bg="#e0e0e0")
+        pricing_frame.pack(fill=tk.X, pady=5)
+        
+        tk.Label(pricing_frame, text="Current Model Pricing ($/M tokens):", bg="#e0e0e0", anchor=tk.W).pack(fill=tk.X)
+        
+        price_info_frame = tk.Frame(pricing_frame, bg="#e0e0e0")
+        price_info_frame.pack(fill=tk.X)
+        
+        tk.Label(price_info_frame, text="Input:", bg="#e0e0e0", width=10, anchor=tk.W).grid(row=0, column=0, sticky=tk.W)
+        self.input_price_label = tk.Label(price_info_frame, text="$0.15", bg="#e0e0e0", anchor=tk.W)
+        self.input_price_label.grid(row=0, column=1, sticky=tk.W)
+        
+        tk.Label(price_info_frame, text="Output:", bg="#e0e0e0", width=10, anchor=tk.W).grid(row=1, column=0, sticky=tk.W)
+        self.output_price_label = tk.Label(price_info_frame, text="$0.60", bg="#e0e0e0", anchor=tk.W)
+        self.output_price_label.grid(row=1, column=1, sticky=tk.W)
+        
+        # Token usage
+        token_frame = tk.Frame(cost_frame, bg="#e0e0e0")
+        token_frame.pack(fill=tk.X, pady=5)
+        
+        tk.Label(token_frame, text="Token Usage:", bg="#e0e0e0", anchor=tk.W).pack(fill=tk.X)
+        
+        token_info_frame = tk.Frame(token_frame, bg="#e0e0e0")
+        token_info_frame.pack(fill=tk.X)
+        
+        tk.Label(token_info_frame, text="Input:", bg="#e0e0e0", width=10, anchor=tk.W).grid(row=0, column=0, sticky=tk.W)
+        self.input_tokens_label = tk.Label(token_info_frame, text="0", bg="#e0e0e0", anchor=tk.W)
+        self.input_tokens_label.grid(row=0, column=1, sticky=tk.W)
+        
+        tk.Label(token_info_frame, text="Output:", bg="#e0e0e0", width=10, anchor=tk.W).grid(row=1, column=0, sticky=tk.W)
+        self.output_tokens_label = tk.Label(token_info_frame, text="0", bg="#e0e0e0", anchor=tk.W)
+        self.output_tokens_label.grid(row=1, column=1, sticky=tk.W)
+        
+        # Total cost
+        cost_total_frame = tk.Frame(cost_frame, bg="#e0e0e0")
+        cost_total_frame.pack(fill=tk.X, pady=5)
+        
+        tk.Label(cost_total_frame, text="Total Cost:", bg="#e0e0e0", font=("Helvetica", 10, "bold"), anchor=tk.W).grid(row=0, column=0, sticky=tk.W)
+        self.total_cost_label = tk.Label(cost_total_frame, text="$0.00", bg="#e0e0e0", font=("Helvetica", 10, "bold"), anchor=tk.W)
+        self.total_cost_label.grid(row=0, column=1, sticky=tk.W)
         
         # Session control
         control_frame = tk.Frame(self.left_panel, bg="#e0e0e0", padx=10, pady=10)
@@ -129,6 +178,9 @@ class OpenRouterGUI:
         
         self.progress = ttk.Progressbar(self.left_panel, orient=tk.HORIZONTAL, mode='determinate')
         self.progress.pack(fill=tk.X, padx=10, pady=(0, 10))
+        
+        # Initialize cost display
+        self.update_cost_display()
     
     def setup_right_panel(self):
         # Chat display area
@@ -180,6 +232,11 @@ class OpenRouterGUI:
         self.chat_display.set_html("<html><body></body></html>")
         self.status_label.config(text="Session Cleared")
         self.progress['value'] = 0
+        
+        # Reset token and cost tracking
+        self.total_output_tokens = 0
+        self.total_cost = 0.0
+        self.update_cost_display()
     
     def extract_pdf_text(self, file_path):
         try:
@@ -194,52 +251,48 @@ class OpenRouterGUI:
             return f"PDF Error: {str(e)}"
     
     def encode_image(self, image_path):
+        # Open and encode the image with a data URI prefix based on its MIME type.
+        mime_type, _ = mimetypes.guess_type(image_path)
+        if mime_type is None:
+            mime_type = "image/jpeg"  # default MIME type if unknown
         with open(image_path, "rb") as image_file:
-            return base64.b64encode(image_file.read()).decode('utf-8')
+            encoded = base64.b64encode(image_file.read()).decode('utf-8')
+        return f"data:{mime_type};base64,{encoded}"
     
     def prepare_messages(self, user_input):
         messages = []
-        
+
         # Add system message if provided
         system_content = self.system_prompt.get("1.0", tk.END).strip()
         if system_content:
             messages.append({"role": "system", "content": system_content})
-        
+
         # Add conversation history
         for msg in self.conversation_history:
             messages.append(msg)
-        
-        # Prepare the current message with any attachments
-        content = []
-        
-        # Add text content
-        content.append({"type": "text", "text": user_input})
-        
-        # Add file attachments
+
+        # Build the user message as a single plain text string.
+        message_content = user_input
+
+        # Process file attachments:
         for file in self.attached_files:
             if file["type"] == "image":
                 try:
-                    base64_image = self.encode_image(file["path"])
-                    content.append({
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/jpeg;base64,{base64_image}"
-                        }
-                    })
+                    # (Optionally, you could include image data here if supported.)
+                    # For now, simply add a marker to inform the user and model.
+                    message_content += f"\n[Image Attached: {os.path.basename(file['path'])}]"
                 except Exception as e:
                     self.update_status(f"Error processing image: {str(e)}")
             
             elif file["type"] == "pdf":
                 try:
-                    pdf_text = self.extract_pdf_text(file["path"])
-                    content.append({
-                        "type": "text", 
-                        "text": f"\nPDF CONTENT ({os.path.basename(file['path'])}):\n{textwrap.shorten(pdf_text, width=8000, placeholder='...')}"
-                    })
+                    # Instead of appending the full PDF text, add a marker.
+                    message_content += f"\n[PDF Attached: {os.path.basename(file['path'])}]"
                 except Exception as e:
                     self.update_status(f"Error processing PDF: {str(e)}")
-        
-        messages.append({"role": "user", "content": content})
+
+        # Append the plain-text user message.
+        messages.append({"role": "user", "content": message_content})
         return messages
     
     def update_status(self, text):
@@ -253,29 +306,18 @@ class OpenRouterGUI:
             if msg["role"] == "user":
                 html_content += f"<div style='margin: 10px 0; padding: 10px; background-color: #e6f2ff; border-radius: 10px;'>"
                 html_content += f"<strong>You:</strong><br/>"
-                
-                if isinstance(msg["content"], list):
-                    for item in msg["content"]:
-                        if item.get("type") == "text":
-                            text_with_br = item['text'].replace('\n', '<br/>')
-                            html_content += text_with_br
-                        elif item.get("type") == "image_url":
-                            html_content += f"<em>[Image attached]</em><br/>"
-                else:
-                    text_with_br = msg['content'].replace('\n', '<br/>')
-                    html_content += text_with_br
-                
+                # Use the display version if available.
+                content_to_display = msg.get("display", msg.get("content", ""))
+                text_with_br = content_to_display.replace('\n', '<br/>')
+                html_content += text_with_br
                 html_content += "</div>"
             
             elif msg["role"] == "assistant":
                 html_content += f"<div style='margin: 10px 0; padding: 10px; background-color: #f0f0f0; border-radius: 10px;'>"
                 html_content += f"<strong>Assistant:</strong><br/>"
-                
-                # Convert markdown to HTML
                 md_content = msg["content"]
                 html_from_md = markdown.markdown(md_content, extensions=['fenced_code', 'tables'])
                 html_content += html_from_md
-                
                 html_content += "</div>"
             
             elif msg["role"] == "system":
@@ -304,56 +346,155 @@ class OpenRouterGUI:
         self.update_status("Processing...")
         self.progress['value'] = 10
         
-        # Store user message
-        if len(self.attached_files) > 0:
-            user_message = {"role": "user", "content": self.prepare_messages(user_input)[-1]["content"]}
-        else:
-            user_message = {"role": "user", "content": user_input}
+        # Build separate display and API versions of the user message.
+        display_message = user_input
+        api_message_parts = []
         
+        # Add the text part if present.
+        if user_input:
+            api_message_parts.append({"type": "text", "text": user_input})
+        
+        # Process file attachments:
+        for file in self.attached_files:
+            if file["type"] == "image":
+                display_message += f"\n[Image Attached: {os.path.basename(file['path'])}]"
+                try:
+                    encoded_image = self.encode_image(file["path"])
+                    api_message_parts.append({
+                        "type": "image_url",
+                        "image_url": {"url": encoded_image}
+                    })
+                except Exception as e:
+                    self.update_status(f"Error processing image: {str(e)}")
+            elif file["type"] == "pdf":
+                display_message += f"\n[PDF Attached: {os.path.basename(file['path'])}]"
+                try:
+                    pdf_text = self.extract_pdf_text(file["path"])
+                    api_message_parts.append({
+                        "type": "text",
+                        "text": f"PDF CONTENT ({os.path.basename(file['path'])}):\n{pdf_text}"
+                    })
+                except Exception as e:
+                    self.update_status(f"Error processing PDF: {str(e)}")
+        
+        # Store the user message with separate display and API multi-part content.
+        user_message = {"role": "user", "display": display_message, "content": api_message_parts}
         self.conversation_history.append(user_message)
         self.update_chat_display()
         
-        # Start processing in a separate thread
-        threading.Thread(target=self.process_message, args=(user_input,)).start()
+        # Begin processing in a separate thread.
+        threading.Thread(target=self.process_message).start()
     
-    def process_message(self, user_input):
+    def process_message(self):
         try:
-            messages = self.prepare_messages(user_input)
+            # Build messages for the API call.
+            system_content = self.system_prompt.get("1.0", tk.END).strip()
+            messages = []
+            if system_content:
+                messages.append({"role": "system", "content": system_content})
+            for msg in self.conversation_history:
+                if msg["role"] == "user" and "api_content" in msg:
+                    messages.append({"role": "user", "content": msg["api_content"]})
+                else:
+                    messages.append({"role": msg["role"], "content": msg.get("content", "")})
+
             selected_model = self.model_var.get()
+            
+            # Estimate input tokens
+            input_tokens = self.estimate_tokens(messages)
+            self.total_input_tokens += input_tokens
             
             self.progress['value'] = 30
             self.update_status(f"Sending request to {selected_model}...")
             
             response = client.chat.completions.create(
                 model=selected_model,
-                messages=[{
-                    "role": msg["role"],
-                    "content": msg["content"]
-                } for msg in messages],
+                messages=[{"role": m["role"], "content": m["content"]} for m in messages],
             )
             
             self.progress['value'] = 90
             
-            # Get the response content
             assistant_response = response.choices[0].message.content.strip()
             
-            # Store assistant message
+            # Estimate output tokens
+            output_tokens = self.estimate_tokens([{"role": "assistant", "content": assistant_response}])
+            self.total_output_tokens += output_tokens
+            
+            # Calculate cost
+            self.calculate_session_cost()
+            
             self.conversation_history.append({"role": "assistant", "content": assistant_response})
             
-            # Update the chat display
             self.root.after(0, self.update_chat_display)
+            self.root.after(0, self.update_cost_display)
             self.root.after(0, lambda: self.update_status("Ready"))
             self.root.after(0, lambda: setattr(self.progress, 'value', 100))
-            
-            # Clear attachments after successful message
             self.root.after(0, self.clear_attachments)
             
         except Exception as e:
             error_message = f"Error: {str(e)}"
             self.root.after(0, lambda: self.update_status(error_message))
-            print(error_message)  # Print to console for debugging
+            print(error_message)
         finally:
             self.is_processing = False
+    
+    def estimate_tokens(self, messages):
+        """Estimate token count for a list of messages"""
+        try:
+            # Try to use tiktoken for OpenAI models
+            encoding = tiktoken.encoding_for_model("gpt-3.5-turbo")
+            token_count = 0
+            
+            for message in messages:
+                # Add tokens for message role
+                token_count += 4  # Approximate tokens for role
+                
+                content = message.get("content", "")
+                if isinstance(content, list):
+                    # Process each part in multi-part messages
+                    for part in content:
+                        if part.get("type") == "text":
+                            text = part.get("text", "")
+                            token_count += len(encoding.encode(text))
+                        elif part.get("type") == "image_url":
+                            # Use a constant token count for image parts
+                            token_count += 3
+                else:
+                    # Fallback to string content estimation
+                    token_count += len(encoding.encode(content))
+            
+            # Add a few tokens for message formatting
+            token_count += 2
+            
+            return token_count
+        except:
+            # Fallback to character-based estimation (very rough)
+            total_chars = sum(len(msg.get("content", "")) for msg in messages)
+            # Rough estimate: 1 token ≈ 4 characters for English text
+            return total_chars // 4
+    
+    def calculate_session_cost(self):
+        """Calculate the total cost of the session based on token usage"""
+        selected_model = self.model_var.get()
+        
+        if selected_model in MODEL_PRICING:
+            pricing = MODEL_PRICING[selected_model]
+            input_cost = (self.total_input_tokens / 1_000_000) * pricing["input"]
+            output_cost = (self.total_output_tokens / 1_000_000) * pricing["output"]
+            self.total_cost = input_cost + output_cost
+    
+    def update_cost_display(self, event=None):
+        """Update the cost display UI elements"""
+        selected_model = self.model_var.get()
+        
+        if selected_model in MODEL_PRICING:
+            pricing = MODEL_PRICING[selected_model]
+            self.input_price_label.config(text=f"${pricing['input']:.2f}")
+            self.output_price_label.config(text=f"${pricing['output']:.2f}")
+        
+        self.input_tokens_label.config(text=f"{self.total_input_tokens:,}")
+        self.output_tokens_label.config(text=f"{self.total_output_tokens:,}")
+        self.total_cost_label.config(text=f"${self.total_cost:.6f}")
     
     def clear_attachments(self):
         self.attached_files = []
