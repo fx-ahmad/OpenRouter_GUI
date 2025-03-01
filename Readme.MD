@@ -1,10 +1,10 @@
 # OpenRouterGUI
 
-OpenRouterGUI is a graphical user interface application built with Python's Tkinter library. It interfaces with the OpenAI API to provide a conversational chat interface with additional functionalities such as file attachments, session cost tracking, and chat archiving.
+OpenRouterGUI is a graphical user interface application built with Python's Tkinter library. It interfaces with the OpenRouter API to provide a conversational chat interface with additional functionalities such as file attachments, session cost tracking, and chat archiving.
 
 ## Features
 
-- **Chat Interface**: Communicate with the OpenAI models through a user-friendly chat interface.
+- **Chat Interface**: Communicate with the Different LLM models through a user-friendly chat interface.
 - **Model Selection**: Choose from a list of available models to interact with.
 - **System Prompts**: Customize the system prompt to guide the behavior of the assistant.
 - **File Attachments**: Attach images and PDFs to your chat sessions.
@@ -51,7 +51,7 @@ OpenRouterGUI is a graphical user interface application built with Python's Tkin
 ## Files
 
 - `OpenRouterGUI.py`: Main application script.
-- `Open_router_basics.py`: Contains basic configurations and client initialization for the OpenAI API.
+- `Open_router_basics.py`: Contains basic configurations and client initialization for the OpenRouter API. Bring your own Api key. 
 
 ## Contributing
 
