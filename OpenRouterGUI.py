@@ -493,22 +493,29 @@ class OpenRouterGUI:
     def calculate_session_cost(self):
         """Calculate the total cost of the session based on token usage"""
         selected_model = self.model_var.get()
-        
         if selected_model in MODEL_PRICING:
             pricing = MODEL_PRICING[selected_model]
-            input_cost = (self.total_input_tokens / 1_000_000) * pricing["input"]
-            output_cost = (self.total_output_tokens / 1_000_000) * pricing["output"]
+            if isinstance(pricing, dict):
+                input_cost = (self.total_input_tokens / 1_000_000) * pricing["input"]
+                output_cost = (self.total_output_tokens / 1_000_000) * pricing["output"]
+            else:
+                # If pricing is a single value, use it for both input and output
+                input_cost = (self.total_input_tokens / 1_000_000) * pricing
+                output_cost = (self.total_output_tokens / 1_000_000) * pricing
             self.total_cost = input_cost + output_cost
-    
+
     def update_cost_display(self, event=None):
         """Update the cost display UI elements"""
         selected_model = self.model_var.get()
-        
         if selected_model in MODEL_PRICING:
             pricing = MODEL_PRICING[selected_model]
-            self.input_price_label.config(text=f"${pricing['input']:.2f}")
-            self.output_price_label.config(text=f"${pricing['output']:.2f}")
-        
+            if isinstance(pricing, dict):
+                self.input_price_label.config(text=f"${pricing['input']:.2f}")
+                self.output_price_label.config(text=f"${pricing['output']:.2f}")
+            else:
+                # If pricing is a single value, display it for both input and output
+                self.input_price_label.config(text=f"${pricing:.2f}")
+                self.output_price_label.config(text=f"${pricing:.2f}")
         self.input_tokens_label.config(text=f"{self.total_input_tokens:,}")
         self.output_tokens_label.config(text=f"{self.total_output_tokens:,}")
         self.total_cost_label.config(text=f"${self.total_cost:.6f}")
@@ -645,4 +652,4 @@ def main():
     root.mainloop()
 
 if __name__ == "__main__":
-    main() 
+    main()
