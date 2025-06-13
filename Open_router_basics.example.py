@@ -14,5 +14,8 @@ client = OpenAI(
 # Model_cost = {}
 # Example model cost dictionary
 # Model_cost = {
-#     'mistralai/devstral-small:free': 0,
+#   'mistralai/devstral-small:free': {
+#      "input": 0,
+#      "output": 0,
+#    },
 # }
